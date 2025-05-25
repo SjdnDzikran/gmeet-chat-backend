@@ -1,0 +1,88 @@
+version: '3.8'
+
+services:
+  # Next.js Frontend (building from the sibling frontend repository)
+  frontend:
+    build:
+      context: ../gmeet-chat-frontend # Path to your Next.js app (one level up, then into the frontend repo)
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_CHAT_SERVICE_URL: http://chat_service:4000 # Points to chat_service within Docker
+    depends_on:
+      - chat_service
+    networks:
+      - app_network
+    # Optional: For live reloading during development if you mount volumes
+    # volumes:
+    #   - ../gmeet-chat-frontend:/app # Mount your frontend code
+    #   - /app/node_modules # Anonymous volume to prevent host node_modules from overwriting container's
+    #   - /app/.next # Anonymous volume for build artifacts
+
+  chat_service:
+    build:
+      context: ./chat-service # Path is now relative to gmeet-chat-backend
+      dockerfile: Dockerfile
+    # ports: # Optional: expose for direct testing
+    #   - "4001:4000"
+    environment:
+      PORT: 4000
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+      # REDIS_URL will be added for Phase 2
+    depends_on:
+      - rabbitmq
+      - redis # Add redis dependency
+    networks:
+      - app_network
+
+  message_archiver:
+    build:
+      context: ./message-archiver # Path is now relative to gmeet-chat-backend
+      dockerfile: Dockerfile
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - rabbitmq
+    networks:
+      - app_network
+
+  redis:
+    image: redis:7-alpine
+    # ports:
+    #   - "6379:6379" # Only if you need to access it directly from host
+    networks:
+      - app_network
+    volumes:
+      - redis_data:/data
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    ports: # Expose management UI for convenience
+      - "15673:15672" # Management UI (host:container)
+    # internal port 5672 is used by services within docker network
+    networks:
+      - app_network
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  # Nginx service will be added in Phase 3
+  # nginx:
+  #   build:
+  #     context: ./nginx # Assuming nginx config will be in gmeet-chat-backend/nginx
+  #     dockerfile: Dockerfile # Or just use official nginx image and mount config
+  #   ports:
+  #     - "8080:80" # Example: Nginx listening on 8080 on host
+  #   depends_on:
+  #     - chat_service_1 # If you scale chat_service
+  #     - chat_service_2
+  #   networks:
+  #     - app_network
+
+networks:
+  app_network:
+    driver: bridge
+
+volumes:
+  redis_data:
+  rabbitmq_data:
